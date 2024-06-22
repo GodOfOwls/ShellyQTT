@@ -208,7 +208,7 @@ def on_message(client, userdata, msg):
                                          )
                         print(f"Data written to InfluxDB: {point}")
     elif msg.topic.startswith('shellies'):
-        print(msg)
+
         topic_parts = msg.topic.split('/')
         if len(topic_parts) >= 4:
             device_type = topic_parts[1]
