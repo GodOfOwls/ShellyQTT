@@ -150,6 +150,34 @@ def on_message(client, userdata, msg):
                     data = json.loads(data)
                     data = data.get("payload")
 
+                    if 'temperature' in data:
+                        point = Point("shelly_temperature") \
+                            .tag("device_id", str(data.get('address'))) \
+                            .field("temperature_c", float(data.get('temperature'))) \
+                            .field("temperature_f", float((data.get('temperature') * 1.8 + 32.0)))
+
+                        # Write to InfluxDB
+                        with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
+                            writer.write(org=INFLUXDB_ORGANIZATION,
+                                         bucket=INFLUXDB_BUCKET,
+                                         record=point,
+                                         )
+
+                        print(f"Data written to InfluxDB: {point}")
+
+
+                    if 'humidity' in data:
+                        point = Point("shelly_humidity") \
+                            .tag("device_id", data.get('address')) \
+                            .field("humidity", float(data.get('humidity')))
+
+                        with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
+                            writer.write(org=INFLUXDB_ORGANIZATION,
+                                         bucket=INFLUXDB_BUCKET,
+                                         record=point,
+                                         )
+                        print(f"Data written to InfluxDB: {point}")
+
                     if 'motion' in data:
 
                         point = Point("motion_sensor") \
@@ -215,41 +243,98 @@ def on_message(client, userdata, msg):
             device_update = topic_parts[2]
             topic = "/".join(topic_parts[3:])
             if topic == 'temperature':
-                payload = msg.payload.decode("utf-8")
-                point = Point("shelly_temperature") \
-                    .tag("device_id", device_type) \
-                    .field("temperature_c", float(payload))
+                try:
+                    payload = msg.payload.decode("utf-8")
+                    point = Point("shelly_temperature") \
+                        .tag("device_id", device_type) \
+                        .field("temperature_c", float(payload))
 
-                # Write to InfluxDB
-                with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
-                    writer.write(org=INFLUXDB_ORGANIZATION,
-                                 bucket=INFLUXDB_BUCKET,
-                                 record=point,
-                                 )
-                print(f"Data written to InfluxDB: {point}")
-                pass
+                    # Write to InfluxDB
+                    with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
+                        writer.write(org=INFLUXDB_ORGANIZATION,
+                                     bucket=INFLUXDB_BUCKET,
+                                     record=point,
+                                     )
+                    print(f"Data written to InfluxDB: {point}")
+                    pass
+                except:
+                    pass
             elif topic == 'humidity':
-                payload = msg.payload.decode("utf-8")
-                point = Point("shelly_humidity") \
-                    .tag("device_id", device_type) \
-                    .field("humidity", float(payload))
+                try:
+                    payload = msg.payload.decode("utf-8")
+                    point = Point("shelly_humidity") \
+                        .tag("device_id", device_type) \
+                        .field("humidity", float(payload))
 
-                # Write to InfluxDB
-                with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
-                    writer.write(org=INFLUXDB_ORGANIZATION,
-                                 bucket=INFLUXDB_BUCKET,
-                                 record=point,
-                                 )
-                print(f"Data written to InfluxDB: {point}")
+                    # Write to InfluxDB
+                    with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
+                        writer.write(org=INFLUXDB_ORGANIZATION,
+                                     bucket=INFLUXDB_BUCKET,
+                                     record=point,
+                                     )
+                    print(f"Data written to InfluxDB: {point}")
+                    pass
+                except:
+                    pass
+    elif msg.topic.startswith('stat'):
+        topic_parts = msg.topic.split('/')
+
+        if len(topic_parts) >= 3:
+            try:
+                device_type = topic_parts[1]
+                device_update = topic_parts[2]
+                payload = msg.payload.decode("utf-8")
+                if device_update == 'STATUS8':
+                    try:
+                        data = json.loads(payload)
+                        data = data['StatusSNS']['Zaehler']
+
+                        # Extract relevant fields
+                        id = device_type
+
+                        Verbrauch = data.get("Verbrauch1")
+                        Lieferung = data.get("Lieferung1")
+                        Pges = data.get("Pges")
+                        P_L1 = data.get("P_L1")
+                        P_L2 = data.get("P_L2")
+                        P_L3 = data.get("P_L3")
+
+
+                        # Create an InfluxDB point
+                        point = Point("shelly_power") \
+                            .tag("device_id", id) \
+                            .field("Verbrauch", Verbrauch) \
+                            .field("Lieferung", Lieferung) \
+                            .field("Pges", Pges) \
+                            .field("P_L1", P_L1) \
+                            .field("P_L2", P_L2) \
+                            .field("P_L3", P_L3)
+
+
+                        # Write to InfluxDB
+                        with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
+                            writer.write(org=INFLUXDB_ORGANIZATION,
+                                         bucket=INFLUXDB_BUCKET,
+                                         record=point,
+                                         )
+                        print(f"Data written to InfluxDB: {point}")
+
+                    except json.JSONDecodeError:
+                        print(f"Failed to decode JSON payload: {payload}")
+            except:
                 pass
 
 
-client = mqtt.Client()
-client.on_connect = on_connect
-client.on_message = on_message
-client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+while True:
+    #try:
+        client = mqtt.Client()
+        client.on_connect = on_connect
+        client.on_message = on_message
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
-client.connect("pc-owl-03.ad.ebg.pw", 1883, 60)
+        client.connect("pc-owl-03.ad.ebg.pw", 1883, 60)
 
-# Blocking call that processes network traffic, dispatches callbacks and handles reconnecting.
-client.loop_forever()
+        # Blocking call that processes network traffic, dispatches callbacks and handles reconnecting.
+        client.loop_forever()
+
+
