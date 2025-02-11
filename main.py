@@ -21,6 +21,7 @@ INFLUXDB_ORGANIZATION = os.getenv('INFLUXDB_ORGANIZATION')
 INFLUXDB_BUCKET = os.getenv('INFLUXDB_BUCKET')
 MQTT_USERNAME = os.getenv('MQTT_USERNAME')
 MQTT_PASSWORD = os.getenv('MQTT_PASSWORD')
+MQTT_SERVER = os.getenv('MQTT_SERVER')  # Use the MQTT_SERVER variable from .env
 
 # Initialize InfluxDB client
 influx_client = influxdb_client.InfluxDBClient(
@@ -88,7 +89,7 @@ def on_message(client, userdata, msg):
                     except json.JSONDecodeError:
                         print(f"Failed to decode JSON payload: {payload}")
 
-                elif 'temperature:0' in topic:
+                elif 'temperature' in topic:
                     payload = msg.payload.decode("utf-8")
 
                     try:
@@ -99,12 +100,14 @@ def on_message(client, userdata, msg):
 
                         temperature_c = data.get("tC")
                         temperature_f = data.get("tF")
+                        sensor_id = data.get("id")
 
                         # Create an InfluxDB point
                         point = Point("shelly_temperature") \
                             .tag("device_id", id) \
-                            .field("temperature_c", temperature_c) \
-                            .field("temperature_f", temperature_f)
+                            .tag("sensor_id", sensor_id) \
+                            .field("temperature_c", float(temperature_c)) \
+                            .field("temperature_f", float(temperature_f))
 
                         # Write to InfluxDB
                         with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
@@ -116,6 +119,8 @@ def on_message(client, userdata, msg):
 
                     except json.JSONDecodeError:
                         print(f"Failed to decode JSON payload: {payload}")
+
+
 
                 elif 'humidity:0' in topic:
                     payload = msg.payload.decode("utf-8")
@@ -276,7 +281,7 @@ def on_message(client, userdata, msg):
                     pass
                 except:
                     pass
-    elif msg.topic.startswith('stat'):
+    elif msg.topic.startswith('tele'):
         topic_parts = msg.topic.split('/')
 
         if len(topic_parts) >= 3:
@@ -284,10 +289,10 @@ def on_message(client, userdata, msg):
                 device_type = topic_parts[1]
                 device_update = topic_parts[2]
                 payload = msg.payload.decode("utf-8")
-                if device_update == 'STATUS8':
+                if device_update == 'SENSOR':
                     try:
                         data = json.loads(payload)
-                        data = data['StatusSNS']['Zaehler']
+                        data = data['Zaehler']
 
                         # Extract relevant fields
                         id = device_type
@@ -313,8 +318,8 @@ def on_message(client, userdata, msg):
 
                         # Write to InfluxDB
                         with influx_client.write_api(write_options=SYNCHRONOUS) as writer:
-                            writer.write(org=INFLUXDB_ORGANIZATION,
-                                         bucket=INFLUXDB_BUCKET,
+                            writer.write(bucket=INFLUXDB_BUCKET,
+                                         org=INFLUXDB_ORGANIZATION,
                                          record=point,
                                          )
                         print(f"Data written to InfluxDB: {point}")
@@ -326,15 +331,19 @@ def on_message(client, userdata, msg):
 
 
 while True:
-    #try:
+    try:
         client = mqtt.Client()
         client.on_connect = on_connect
         client.on_message = on_message
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
-        client.connect("pc-owl-03.ad.ebg.pw", 1883, 60)
+        client.connect(MQTT_SERVER, 1883, 60)
 
         # Blocking call that processes network traffic, dispatches callbacks and handles reconnecting.
         client.loop_forever()
 
+    except:
+        pass
 
+    finally:
+        print("Closing connection")
